@@ -1,0 +1,117 @@
+#!/bin/bash
+#
+# headphone-jack-detect: Automatic audio jack detection & switching daemon
+# Designed for Anbernic RG353 series (RG353V, RG353VS, RG353M, RG353P)
+# with Rockchip RK3566 + RK817 audio codec.
+#
+# Automatically switches ALSA 'Playback Mux' between 'SPK' (Speaker) and
+# 'HP' (Headphones) on insertion/removal, and applies the correct setting at boot.
+#
+# License: GPL-2.0-or-later
+#
+
+set -uo pipefail
+
+ALSACTL="/usr/sbin/alsactl"
+if [ ! -x "$ALSACTL" ]; then
+    ALSACTL=$(command -v alsactl || true)
+fi
+
+if [ -z "$ALSACTL" ]; then
+    echo "[headphone-jack-detect] Error: alsactl not found. Please install alsa-utils." >&2
+    exit 1
+fi
+
+find_rk817_card() {
+    # 1. Sysfs symlink check
+    if [ -e "/proc/asound/rk817int" ]; then
+        echo "rk817int"
+        return 0
+    fi
+    # 2. Extract card name directly from /proc/asound/cards
+    local detected
+    detected=$(awk -F'[][]' '/rk817/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}' /proc/asound/cards 2>/dev/null || true)
+    if [ -n "$detected" ]; then
+        echo "$detected"
+        return 0
+    fi
+    # 3. Check for Playback Mux control across all available cards
+    for card_idx in 0 1 2; do
+        if amixer -c "$card_idx" cget name='Playback Mux' >/dev/null 2>&1; then
+            echo "$card_idx"
+            return 0
+        fi
+    done
+    return 1
+}
+
+CARD=""
+echo "[headphone-jack-detect] Waiting for RK817 sound card..."
+for _ in $(seq 1 30); do
+    if CARD=$(find_rk817_card); then
+        break
+    fi
+    sleep 0.5
+done
+
+if [ -z "$CARD" ]; then
+    echo "[headphone-jack-detect] Error: RK817 sound card with 'Playback Mux' not detected after 15s." >&2
+    exit 1
+fi
+
+echo "[headphone-jack-detect] Bound to sound card: hw:$CARD"
+
+sync_state() {
+    local jack_out target current
+    # Debounce mechanical contact bounce
+    sleep 0.1
+
+    jack_out=$(amixer -c "$CARD" cget iface=CARD,name='Headphones Jack' 2>/dev/null || true)
+    case "$jack_out" in
+        *": values=on"*)
+            target="HP"
+            ;;
+        *)
+            target="SPK"
+            ;;
+    esac
+
+    current=$(amixer -c "$CARD" cget name='Playback Mux' 2>/dev/null || true)
+    case "$current" in
+        *": values=0"*) [ "$target" = "HP" ] && return 0 ;;
+        *": values=1"*) [ "$target" = "SPK" ] && return 0 ;;
+    esac
+
+    echo "[headphone-jack-detect] Switching audio output to $target"
+    amixer -c "$CARD" cset name='Playback Mux' "$target" >/dev/null 2>&1 || true
+}
+
+# Initial synchronization on startup
+sync_state
+
+# Clean termination: kill all child processes in the current process group
+cleanup() {
+    echo "[headphone-jack-detect] Terminating cleanly..."
+    trap '' SIGTERM SIGINT EXIT
+    kill 0 2>/dev/null || true
+    exit 0
+}
+trap cleanup SIGTERM SIGINT EXIT
+
+# Event loop: Process substitution avoids the pipeline subshell bug
+while true; do
+    while read -r line; do
+        case "$line" in
+            *"Headphones Jack"*)
+                sync_state
+                ;;
+        esac
+    done < <(exec "$ALSACTL" monitor "hw:$CARD" 2>/dev/null)
+
+    echo "[headphone-jack-detect] Monitor exited. Re-checking sound card in 2 seconds..."
+    sleep 2
+    if new_card=$(find_rk817_card); then
+        CARD="$new_card"
+    fi
+    sync_state
+done

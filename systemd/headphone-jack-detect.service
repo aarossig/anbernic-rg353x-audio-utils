@@ -1,0 +1,14 @@
+[Unit]
+Description=Headphone Jack Detection and Audio Mux Auto-Switch
+After=sound.target alsa-restore.service
+Wants=sound.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/headphone-jack-detect
+Restart=always
+RestartSec=3
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

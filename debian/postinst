@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+UNIT="headphone-jack-detect.service"
+
+if [ "$1" = "configure" ]; then
+    # Divert broken upstream alsa-ucm-conf symlinks that hijack RK817 audio
+    for ucm_conf in /usr/share/alsa/ucm2/conf.d/simple-card/rk817_int.conf \
+                    /usr/share/alsa/ucm2/conf.d/simple-card/rk817_ext.conf; do
+        if [ -e "$ucm_conf" ] || dpkg-divert --list "$ucm_conf" >/dev/null 2>&1; then
+            dpkg-divert --package anbernic-rg353x-headphone-detect --add --rename \
+                --divert "${ucm_conf}.disabled" "$ucm_conf" >/dev/null 2>&1 || true
+        fi
+    done
+
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper ensure-enabled "$UNIT" >/dev/null 2>&1 || true
+    elif [ -d /run/systemd/system ]; then
+        systemctl enable "$UNIT" >/dev/null 2>&1 || true
+    fi
+
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        if command -v deb-systemd-invoke >/dev/null 2>&1; then
+            deb-systemd-invoke restart "$UNIT" >/dev/null 2>&1 || true
+        else
+            systemctl restart "$UNIT" >/dev/null 2>&1 || true
+        fi
+    fi
+fi
+
+exit 0

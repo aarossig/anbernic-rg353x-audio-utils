@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+UNIT="headphone-jack-detect.service"
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+fi
+
+if [ "$1" = "purge" ] || [ "$1" = "remove" ]; then
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper purge "$UNIT" >/dev/null 2>&1 || true
+    fi
+    for ucm_conf in /usr/share/alsa/ucm2/conf.d/simple-card/rk817_int.conf \
+                    /usr/share/alsa/ucm2/conf.d/simple-card/rk817_ext.conf; do
+        dpkg-divert --package anbernic-rg353x-headphone-detect --remove --rename \
+            --divert "${ucm_conf}.disabled" "$ucm_conf" >/dev/null 2>&1 || true
+    done
+fi
+
+exit 0

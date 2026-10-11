@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify shell script syntax
+        run: |
+          bash -n bin/headphone-jack-detect
+
+      - name: Build Debian package
+        run: |
+          make deb
+
+      - name: Inspect generated package
+        run: |
+          dpkg-deb --info build/anbernic-rg353x-headphone-detect_*.deb
+          dpkg-deb --contents build/anbernic-rg353x-headphone-detect_*.deb

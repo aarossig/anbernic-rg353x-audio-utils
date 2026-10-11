@@ -1,0 +1,15 @@
+Package: anbernic-rg353x-headphone-detect
+Version: 1.0.0
+Section: sound
+Priority: optional
+Architecture: all
+Depends: bash, alsa-utils, init-system-helpers (>= 1.54~)
+Conflicts: anbernic-rg353x-alsa-ucm, rg353-headphone-detect
+Replaces: anbernic-rg353x-alsa-ucm, rg353-headphone-detect
+Maintainer: Andrew Rossignol <andrew.rossignol@gmail.com>
+Homepage: https://github.com/aarossig/anbernic-rg353x-headphone-detect
+Description: Automatic headphone jack detection daemon for Anbernic RG353 series
+ Event-driven Bash daemon that monitors headphone insertion/removal on
+ RK3566/RK817 handheld devices (RG353V, RG353VS, RG353M, RG353P) and switches
+ ALSA Playback Mux between Speaker and Headphones. Applies the correct output
+ at boot. Ideal for retro gaming, direct ALSA, and headless environments.
