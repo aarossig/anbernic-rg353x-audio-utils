@@ -17,6 +17,11 @@ jobs:
         run: |
           bash -n bin/headphone-jack-detect
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential debhelper
+
       - name: Build Debian package
         run: |
           make deb

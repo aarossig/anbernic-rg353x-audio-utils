@@ -1,3 +1,16 @@
+anbernic-rg353x-audio-utils (1.1.1) unstable; urgency=medium
+
+  * Add dedicated full-range Headphones virtual sink.
+  * Demote raw ALSA hardware sink so virtual sinks always take priority.
+  * Calibrate hardware Master gain staging (reg 215 for SPK, reg 240 for HP).
+  * Retune speaker filter to 280 Hz 4th-order Linkwitz-Riley HPF.
+  * Preserve separate PipeWire volume levels across jack plug and unplug events.
+  * Mute hardware DAC and software sinks during transitions to eliminate bursts and pops.
+  * Relax volume limit to allow volume boost up to 150%.
+  * Use pw-cli for reliable node ID resolution.
+
+ -- Andrew Rossignol <andrew.rossignol@gmail.com>  Mon, 12 Oct 2026 23:00:00 -0700
+
 anbernic-rg353x-audio-utils (1.1.0) unstable; urgency=medium
 
   * Rename package from anbernic-rg353x-headphone-detect to anbernic-rg353x-audio-utils.

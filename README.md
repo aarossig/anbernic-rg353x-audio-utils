@@ -21,15 +21,15 @@ unregulated headphone volume causes deafening levels on connection.
 - **Jack Detection Daemon (`headphone-jack-detect`):** Hardened, event-driven
   Bash daemon running as a systemd service. Sleeps inside `poll()` via
   `alsactl monitor` with 0.00% idle CPU usage.
-- **Independent Volume Preservation:** Automatically saves and restores separate
-  volume levels for speaker and headphones across jack insertion/removal events.
-- **Hearing Protection:** Automatically limits restored headphone volume and
-  scales headroom to prevent audio blasts and minimize analog noise floor.
-- **PipeWire 180 Hz High-Pass Filter:** Custom PipeWire filter-chain provides a
-  180 Hz biquad high-pass filter with digital attenuation for the internal
-  speaker, eliminating mechanical popping on deep bass.
-- **Full-Range Headphone Routing:** Automatically routes headphones directly to
-  the unfiltered hardware ALSA sink for full-range audio fidelity.
+- **Pop-Free Mute Transitions:** Two-stage muting sequence silences hardware DAC
+  and software sinks during transitions, eliminating pops and loud bursts.
+- **Calibrated Gain Staging:** Calibrates hardware Master registers (reg 215 for
+  speaker, reg 240 for headphones) for optimal signal-to-noise ratio.
+- **PipeWire 280 Hz High-Pass Filter:** Custom PipeWire filter-chain provides a
+  280 Hz 4th-order Linkwitz-Riley high-pass filter (24 dB/octave) for the internal
+  speaker, eliminating mechanical cone bottoming and maximizing volume clarity.
+- **Full-Range Virtual Headphones Sink:** Dedicated virtual Headphones sink
+  (`sink.anbernic-headphones`) provides clean, unattenuated full-range audio.
 - **ALSA UCM Diversion:** Automatically diverts conflicting upstream
   `alsa-ucm-conf` profiles.
 
@@ -60,7 +60,7 @@ dpkg-buildpackage -us -uc -b
 ```
 
 The built package is placed in `build/`:
-- `build/anbernic-rg353x-audio-utils_1.1.0_all.deb`
+- `build/anbernic-rg353x-audio-utils_1.1.1_all.deb`
 
 ## Status & Diagnostics
 
