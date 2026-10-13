@@ -1,21 +1,6 @@
 #!/bin/sh
 set -e
 
-UNIT="headphone-jack-detect.service"
-
-if [ "$1" = "remove" ]; then
-    if [ -d /run/systemd/system ]; then
-        systemctl stop "$UNIT" >/dev/null 2>&1 || true
-    fi
-    if command -v deb-systemd-helper >/dev/null 2>&1; then
-        deb-systemd-helper disable "$UNIT" >/dev/null 2>&1 || true
-    elif [ -d /run/systemd/system ]; then
-        systemctl disable "$UNIT" >/dev/null 2>&1 || true
-    fi
-elif [ "$1" = "upgrade" ]; then
-    if [ -d /run/systemd/system ]; then
-        systemctl stop "$UNIT" >/dev/null 2>&1 || true
-    fi
-fi
+#DEBHELPER#
 
 exit 0

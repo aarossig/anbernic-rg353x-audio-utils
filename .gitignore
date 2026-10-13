@@ -1,3 +1,12 @@
 build/
 *.deb
+*.buildinfo
+*.changes
 .DS_Store
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/*.debhelper
+debian/*.debhelper.log
+debian/anbernic-rg353x-audio-utils/

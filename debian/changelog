@@ -1,0 +1,19 @@
+anbernic-rg353x-audio-utils (1.1.0) unstable; urgency=medium
+
+  * Rename package from anbernic-rg353x-headphone-detect to anbernic-rg353x-audio-utils.
+  * Add PipeWire and WirePlumber drop-in configurations:
+    - Prioritize RK817 internal audio over HDMI.
+    - Digital attenuation of -6 dB to prevent RK817 high-pass filter overflow.
+    - ALSA buffer headroom tuning.
+  * Enhance headphone-jack-detect daemon:
+    - Save and restore separate speaker and headphone volume levels across switches.
+    - Provide headphone volume safety limiting to protect hearing and reduce noise floor.
+  * Update packaging and upgrade migration paths.
+
+ -- Andrew Rossignol <andrew.rossignol@gmail.com>  Mon, 12 Oct 2026 21:00:00 -0700
+
+anbernic-rg353x-headphone-detect (1.0.0) unstable; urgency=medium
+
+  * Initial release.
+
+ -- Andrew Rossignol <andrew.rossignol@gmail.com>  Sun, 11 Oct 2026 12:00:00 -0700

@@ -23,5 +23,5 @@ jobs:
 
       - name: Inspect generated package
         run: |
-          dpkg-deb --info build/anbernic-rg353x-headphone-detect_*.deb
-          dpkg-deb --contents build/anbernic-rg353x-headphone-detect_*.deb
+          dpkg-deb --info build/anbernic-rg353x-audio-utils_*.deb
+          dpkg-deb --contents build/anbernic-rg353x-audio-utils_*.deb

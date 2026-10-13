@@ -1,64 +1,66 @@
-# anbernic-rg353x-headphone-detect
+# anbernic-rg353x-audio-utils
 
-Automatic headphone jack detection and audio switching daemon for Anbernic
+Audio support utilities and automatic headphone jack detection for Anbernic
 **RG353** series handheld consoles (**RG353V**, **RG353VS**, **RG353M**,
 **RG353P**) powered by the Rockchip RK3566 SoC and RK817 audio codec.
 
-## The Problem
+## Overview
 
-On devices using the Rockchip RK817 audio codec, audio output routing between
-the internal speaker (`SPK`) and the 3.5mm headphone jack (`HP`) is controlled
-via an internal ALSA multiplexer called `Playback Mux`.
+The Rockchip RK817 audio codec routes output between the internal speaker
+(`SPK`) and the 3.5mm headphone jack (`HP`) using an ALSA multiplexer called
+`Playback Mux`.
 
-On Linux distributions (such as Armbian or minimal Debian), the default saved
-ALSA state restores `Playback Mux` to `HP` on boot, muting the internal
-speaker even when no headphones are plugged in. Furthermore, the kernel driver
-does not automatically switch the hardware multiplexer when headphones are
-inserted or removed.
+On Linux distributions (such as Armbian or minimal Debian), default ALSA states
+often mute the internal speaker on boot. The kernel driver does not switch the
+multiplexer when headphones are inserted or removed. Additionally, unfiltered
+low-frequency audio causes mechanical popping on the internal 20mm speaker, and
+unregulated headphone volume causes deafening levels on connection.
 
-## The Solution
+`anbernic-rg353x-audio-utils` provides a comprehensive solution:
 
-`headphone-jack-detect` is a hardened, event-driven Bash daemon running as a
-lightweight systemd service:
-
-- **Zero CPU Usage:** Sleeps inside the kernel `poll()` call via
-  `alsactl monitor` (0.00% idle CPU).
-- **Minimal Footprint:** Pure Bash requiring ~1 MB RAM with zero external
-  runtimes (no Python, no heavy sound server dependencies).
-- **Universal Compatibility:** Directly controls the hardware ALSA
-  multiplexer. Audio switches seamlessly whether games and emulators
-  (RetroArch, PPSSPP) talk directly to ALSA or through PipeWire and
-  PulseAudio.
-- **PipeWire / WirePlumber Out-of-the-Box:** Includes a WirePlumber session
-  rule prioritizing internal RK817 audio over Rockchip HDMI output and diverts
-  broken upstream `alsa-ucm-conf` profiles.
-- **Robust:** Includes boot-time sound card readiness probing, mechanical
-  contact debouncing, clean signal handling, and dynamic recovery if the
-  audio subsystem restarts.
+- **Jack Detection Daemon (`headphone-jack-detect`):** Hardened, event-driven
+  Bash daemon running as a systemd service. Sleeps inside `poll()` via
+  `alsactl monitor` with 0.00% idle CPU usage.
+- **Independent Volume Preservation:** Automatically saves and restores separate
+  volume levels for speaker and headphones across jack insertion/removal events.
+- **Hearing Protection:** Automatically limits restored headphone volume and
+  scales headroom to prevent audio blasts and minimize analog noise floor.
+- **PipeWire 180 Hz High-Pass Filter:** Custom PipeWire filter-chain provides a
+  180 Hz biquad high-pass filter with digital attenuation for the internal
+  speaker, eliminating mechanical popping on deep bass.
+- **Full-Range Headphone Routing:** Automatically routes headphones directly to
+  the unfiltered hardware ALSA sink for full-range audio fidelity.
+- **ALSA UCM Diversion:** Automatically diverts conflicting upstream
+  `alsa-ucm-conf` profiles.
 
 ## Installation
 
-Download the latest `.deb` package from the Releases page and install it with
-`apt`:
+Download the latest `.deb` package from the Releases page and install it with `apt`:
 
 ```bash
-sudo apt install ./anbernic-rg353x-headphone-detect_*.deb
+sudo apt install ./anbernic-rg353x-audio-utils_*.deb
 ```
 
-The systemd service will be automatically enabled and started immediately.
+The systemd service will be enabled and started automatically.
 
 ## Building from Source
 
-Build the Debian package from source:
+Build the Debian package using `make` or `dpkg-buildpackage`:
 
 ```bash
-git clone https://github.com/aarossig/anbernic-rg353x-headphone-detect.git
-cd anbernic-rg353x-headphone-detect
+git clone https://github.com/aarossig/anbernic-rg353x-audio-utils.git
+cd anbernic-rg353x-audio-utils
 make deb
 ```
 
-The built package will be created in `build/`:
-- `build/anbernic-rg353x-headphone-detect_1.0.0_all.deb`
+Or build with standard Debian tooling:
+
+```bash
+dpkg-buildpackage -us -uc -b
+```
+
+The built package is placed in `build/`:
+- `build/anbernic-rg353x-audio-utils_1.1.0_all.deb`
 
 ## Status & Diagnostics
 
