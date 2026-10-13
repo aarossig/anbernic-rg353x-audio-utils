@@ -24,9 +24,9 @@ if [ -z "$ALSACTL" ]; then
     exit 1
 fi
 
-DEFAULT_SPK_VOL=80
-DEFAULT_HP_VOL=35
-MAX_HP_VOL=75
+DEFAULT_SPK_VOL=67
+DEFAULT_HP_VOL=25
+MAX_HP_VOL=50
 
 STATE_DIR="/var/lib/anbernic-rg353x-audio-utils"
 if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
@@ -119,6 +119,11 @@ set_volume() {
     [ -z "$val" ] && return 1
     [ -z "$VOL_CTRL" ] && return 1
 
+    # Clamp volume to 100% (0 dB ceiling)
+    if [ "$val" -gt 100 ] 2>/dev/null; then
+        val=100
+    fi
+
     if [ "$VOL_KIND" = "scontrol" ]; then
         amixer -c "$CARD" sset "$VOL_CTRL" "${val}%" unmute >/dev/null 2>&1 || true
     elif [ "$VOL_KIND" = "ccontrol" ]; then
@@ -131,7 +136,7 @@ set_volume() {
             if [ -S "$sock" ]; then
                 local uid
                 uid=$(basename "$(dirname "$sock")")
-                XDG_RUNTIME_DIR="/run/user/$uid" wpctl set-volume @DEFAULT_AUDIO_SINK@ "${val}%" >/dev/null 2>&1 || true
+                XDG_RUNTIME_DIR="/run/user/$uid" wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "${val}%" >/dev/null 2>&1 || true
             fi
         done
     fi
@@ -145,8 +150,8 @@ set_pipewire_sink() {
         # Direct hardware sink: full-range and unfiltered
         sink_target="alsa_output.platform-sound.stereo-fallback"
     else
-        # Internal speaker: 180 Hz high-pass filtered sink
-        sink_target="anbernic_speaker_sink"
+        # Internal speaker: 200 Hz 24 dB/octave filtered sink
+        sink_target="sink.anbernic-speaker"
     fi
 
     for sock in /run/user/*/pipewire-0; do

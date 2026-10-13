@@ -9,7 +9,7 @@ all:
 
 deb: $(DEB_FILE)
 
-$(DEB_FILE): bin/headphone-jack-detect systemd/headphone-jack-detect.service debian/control debian/changelog debian/rules wireplumber/50-anbernic-rg353x.conf pipewire/50-anbernic-rg353x.conf
+$(DEB_FILE): bin/headphone-jack-detect systemd/headphone-jack-detect.service debian/control debian/changelog debian/rules wireplumber/50-anbernic-rg353x.conf pipewire/50-anbernic-rg353x.conf pipewire/50-anbernic-limit-volume.conf
 	dpkg-buildpackage -us -uc -b
 	@mkdir -p build
 	@cp ../$(PKG_NAME)_$(PKG_VER)*_$(PKG_ARCH).deb build/ 2>/dev/null || cp ../$(PKG_NAME)_$(PKG_VER)*.deb build/
@@ -24,6 +24,10 @@ install:
 	install -m 644 wireplumber/50-anbernic-rg353x.conf $(DESTDIR)/usr/share/wireplumber/wireplumber.conf.d/50-anbernic-rg353x.conf
 	install -d $(DESTDIR)/usr/share/pipewire/pipewire.conf.d
 	install -m 644 pipewire/50-anbernic-rg353x.conf $(DESTDIR)/usr/share/pipewire/pipewire.conf.d/50-anbernic-rg353x.conf
+	install -d $(DESTDIR)/usr/share/pipewire/pipewire-pulse.conf.d
+	install -m 644 pipewire/50-anbernic-limit-volume.conf $(DESTDIR)/usr/share/pipewire/pipewire-pulse.conf.d/50-anbernic-rg353x.conf
+	install -d $(DESTDIR)/usr/share/pipewire/client.conf.d
+	install -m 644 pipewire/50-anbernic-limit-volume.conf $(DESTDIR)/usr/share/pipewire/client.conf.d/50-anbernic-rg353x.conf
 
 clean:
 	dh_clean 2>/dev/null || true
