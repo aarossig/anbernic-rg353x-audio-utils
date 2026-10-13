@@ -5,7 +5,9 @@
 # with Rockchip RK3566 + RK817 audio codec.
 #
 # Automatically switches ALSA 'Playback Mux' between 'SPK' (Speaker) and
-# 'HP' (Headphones) on insertion/removal, and applies the correct setting at boot.
+# 'HP' (Headphones) on insertion/removal, applies correct settings at boot,
+# switches PipeWire sinks (180Hz filtered for speaker, full-range for headphones),
+# and preserves separate volume levels across outputs.
 #
 # License: GPL-2.0-or-later
 #
@@ -22,6 +24,18 @@ if [ -z "$ALSACTL" ]; then
     exit 1
 fi
 
+DEFAULT_SPK_VOL=80
+DEFAULT_HP_VOL=35
+MAX_HP_VOL=75
+
+STATE_DIR="/var/lib/anbernic-rg353x-audio-utils"
+if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
+    STATE_DIR="/run/anbernic-rg353x-audio-utils"
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+fi
+SPK_VOL_FILE="$STATE_DIR/spk_volume"
+HP_VOL_FILE="$STATE_DIR/hp_volume"
+
 find_rk817_card() {
     # 1. Sysfs symlink check
     if [ -e "/proc/asound/rk817int" ]; then
@@ -30,13 +44,13 @@ find_rk817_card() {
     fi
     # 2. Extract card name directly from /proc/asound/cards
     local detected
-    detected=$(awk -F'[][]' '/rk817/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}' /proc/asound/cards 2>/dev/null || true)
+    detected=$(awk -F'[][]' '/rk817|platform-sound/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}' /proc/asound/cards 2>/dev/null || true)
     if [ -n "$detected" ]; then
         echo "$detected"
         return 0
     fi
-    # 3. Check for Playback Mux control across all available cards
-    for card_idx in 0 1 2; do
+    # 3. Check for Playback Mux control across available cards
+    for card_idx in 0 1 2 3; do
         if amixer -c "$card_idx" cget name='Playback Mux' >/dev/null 2>&1; then
             echo "$card_idx"
             return 0
@@ -46,6 +60,152 @@ find_rk817_card() {
 }
 
 CARD=""
+VOL_CTRL=""
+VOL_KIND=""
+CURRENT_OUTPUT=""
+
+find_volume_control() {
+    local ctrl
+    # Check simple mixer controls
+    for ctrl in "Playback" "Master" "DAC"; do
+        if amixer -c "$CARD" sget "$ctrl" >/dev/null 2>&1; then
+            VOL_CTRL="$ctrl"
+            VOL_KIND="scontrol"
+            return 0
+        fi
+    done
+    # Scan available simple controls
+    ctrl=$(amixer -c "$CARD" scontrols 2>/dev/null | awk -F"'" '/Playback|Master|DAC|Volume/ {print $2; exit}')
+    if [ -n "$ctrl" ] && amixer -c "$CARD" sget "$ctrl" >/dev/null 2>&1; then
+        VOL_CTRL="$ctrl"
+        VOL_KIND="scontrol"
+        return 0
+    fi
+    # Fallback to card controls
+    for ctrl in "Playback Volume" "Master Playback Volume" "DAC Playback Volume"; do
+        if amixer -c "$CARD" cget name="$ctrl" >/dev/null 2>&1; then
+            VOL_CTRL="$ctrl"
+            VOL_KIND="ccontrol"
+            return 0
+        fi
+    done
+    return 1
+}
+
+get_volume() {
+    [ -z "$VOL_CTRL" ] && return 1
+    if [ "$VOL_KIND" = "scontrol" ]; then
+        local out vol
+        out=$(amixer -c "$CARD" sget "$VOL_CTRL" 2>/dev/null || true)
+        vol=$(echo "$out" | grep -o -E '\[[0-9]+%\]' | head -n 1 | tr -d '[]%')
+        if [ -n "$vol" ]; then
+            echo "$vol"
+            return 0
+        fi
+    elif [ "$VOL_KIND" = "ccontrol" ]; then
+        local out val
+        out=$(amixer -c "$CARD" cget name="$VOL_CTRL" 2>/dev/null || true)
+        val=$(echo "$out" | grep -o -E ': values=[0-9]+' | head -n 1 | cut -d= -f2)
+        if [ -n "$val" ]; then
+            echo "$val"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+set_volume() {
+    local val="$1"
+    [ -z "$val" ] && return 1
+    [ -z "$VOL_CTRL" ] && return 1
+
+    if [ "$VOL_KIND" = "scontrol" ]; then
+        amixer -c "$CARD" sset "$VOL_CTRL" "${val}%" unmute >/dev/null 2>&1 || true
+    elif [ "$VOL_KIND" = "ccontrol" ]; then
+        amixer -c "$CARD" cset name="$VOL_CTRL" "$val" >/dev/null 2>&1 || true
+    fi
+
+    # Sync active PipeWire / WirePlumber user sessions if running
+    if command -v wpctl >/dev/null 2>&1; then
+        for sock in /run/user/*/pipewire-0; do
+            if [ -S "$sock" ]; then
+                local uid
+                uid=$(basename "$(dirname "$sock")")
+                XDG_RUNTIME_DIR="/run/user/$uid" wpctl set-volume @DEFAULT_AUDIO_SINK@ "${val}%" >/dev/null 2>&1 || true
+            fi
+        done
+    fi
+}
+
+set_pipewire_sink() {
+    local target="$1"
+    local sink_target=""
+
+    if [ "$target" = "HP" ]; then
+        # Direct hardware sink: full-range and unfiltered
+        sink_target="alsa_output.platform-sound.stereo-fallback"
+    else
+        # Internal speaker: 180 Hz high-pass filtered sink
+        sink_target="anbernic_speaker_sink"
+    fi
+
+    for sock in /run/user/*/pipewire-0; do
+        if [ -S "$sock" ]; then
+            local uid
+            uid=$(basename "$(dirname "$sock")")
+            XDG_RUNTIME_DIR="/run/user/$uid" pw-metadata -n default 0 default.audio.sink "{\"name\":\"$sink_target\"}" >/dev/null 2>&1 || true
+            if command -v wpctl >/dev/null 2>&1; then
+                local id
+                id=$(XDG_RUNTIME_DIR="/run/user/$uid" wpctl status 2>/dev/null | awk -v name="$sink_target" '$0 ~ name {print $1; exit}' | tr -d '*.' || true)
+                if [ -n "$id" ]; then
+                    XDG_RUNTIME_DIR="/run/user/$uid" wpctl set-default "$id" >/dev/null 2>&1 || true
+                fi
+            fi
+        fi
+    done
+}
+
+save_volume() {
+    local target_type="$1"
+    local vol
+    vol=$(get_volume || true)
+    if [ -n "$vol" ] && [ "$vol" -ge 0 ] 2>/dev/null; then
+        if [ "$target_type" = "HP" ]; then
+            echo "$vol" > "$HP_VOL_FILE" 2>/dev/null || true
+            echo "[headphone-jack-detect] Saved headphone volume: ${vol}%"
+        else
+            echo "$vol" > "$SPK_VOL_FILE" 2>/dev/null || true
+            echo "[headphone-jack-detect] Saved speaker volume: ${vol}%"
+        fi
+    fi
+}
+
+restore_volume() {
+    local target_type="$1"
+    local vol=""
+    if [ "$target_type" = "HP" ]; then
+        if [ -f "$HP_VOL_FILE" ]; then
+            vol=$(cat "$HP_VOL_FILE" 2>/dev/null || true)
+        fi
+        if [ -z "$vol" ] || ! [ "$vol" -ge 0 ] 2>/dev/null; then
+            vol="$DEFAULT_HP_VOL"
+        fi
+        if [ "$vol" -gt "$MAX_HP_VOL" ] 2>/dev/null; then
+            vol="$MAX_HP_VOL"
+        fi
+        echo "[headphone-jack-detect] Restoring headphone volume: ${vol}%"
+    else
+        if [ -f "$SPK_VOL_FILE" ]; then
+            vol=$(cat "$SPK_VOL_FILE" 2>/dev/null || true)
+        fi
+        if [ -z "$vol" ] || ! [ "$vol" -ge 0 ] 2>/dev/null; then
+            vol="$DEFAULT_SPK_VOL"
+        fi
+        echo "[headphone-jack-detect] Restoring speaker volume: ${vol}%"
+    fi
+    set_volume "$vol"
+}
+
 echo "[headphone-jack-detect] Waiting for RK817 sound card..."
 for _ in $(seq 1 30); do
     if CARD=$(find_rk817_card); then
@@ -59,7 +219,8 @@ if [ -z "$CARD" ]; then
     exit 1
 fi
 
-echo "[headphone-jack-detect] Bound to sound card: hw:$CARD"
+find_volume_control || true
+echo "[headphone-jack-detect] Bound to sound card: hw:$CARD (control: ${VOL_CTRL:-none})"
 
 sync_state() {
     local jack_out target current
@@ -77,28 +238,52 @@ sync_state() {
     esac
 
     current=$(amixer -c "$CARD" cget name='Playback Mux' 2>/dev/null || true)
+    local current_mux=""
     case "$current" in
-        *": values=0"*) [ "$target" = "HP" ] && return 0 ;;
-        *": values=1"*) [ "$target" = "SPK" ] && return 0 ;;
+        *": values=0"*) current_mux="HP" ;;
+        *": values=1"*) current_mux="SPK" ;;
     esac
 
-    echo "[headphone-jack-detect] Switching audio output to $target"
-    amixer -c "$CARD" cset name='Playback Mux' "$target" >/dev/null 2>&1 || true
+    if [ "$target" = "$CURRENT_OUTPUT" ] && [ "$target" = "$current_mux" ]; then
+        return 0
+    fi
+
+    echo "[headphone-jack-detect] Jack event: switching to $target (previous: ${CURRENT_OUTPUT:-boot})"
+
+    if [ -n "$CURRENT_OUTPUT" ] && [ "$CURRENT_OUTPUT" != "$target" ]; then
+        save_volume "$CURRENT_OUTPUT"
+    fi
+
+    if [ "$target" = "HP" ]; then
+        # Protect hearing: set headphone volume before routing audio to headphones
+        restore_volume "HP"
+        amixer -c "$CARD" cset name='Playback Mux' 'HP' >/dev/null 2>&1 || true
+        set_pipewire_sink "HP"
+    else
+        amixer -c "$CARD" cset name='Playback Mux' 'SPK' >/dev/null 2>&1 || true
+        restore_volume "SPK"
+        set_pipewire_sink "SPK"
+    fi
+
+    CURRENT_OUTPUT="$target"
 }
 
 # Initial synchronization on startup
 sync_state
 
-# Clean termination: kill all child processes in the current process group
+# Clean termination
 cleanup() {
     echo "[headphone-jack-detect] Terminating cleanly..."
+    if [ -n "$CURRENT_OUTPUT" ]; then
+        save_volume "$CURRENT_OUTPUT"
+    fi
     trap '' SIGTERM SIGINT EXIT
     kill 0 2>/dev/null || true
     exit 0
 }
 trap cleanup SIGTERM SIGINT EXIT
 
-# Event loop: Process substitution avoids the pipeline subshell bug
+# Event loop
 while true; do
     while read -r line; do
         case "$line" in
@@ -112,6 +297,7 @@ while true; do
     sleep 2
     if new_card=$(find_rk817_card); then
         CARD="$new_card"
+        find_volume_control || true
     fi
     sync_state
 done
